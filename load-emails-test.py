@@ -41,38 +41,13 @@ def includes_key_words(email_text, sentence, key_words):
         email_text['BeginOffset'] = min_index + email_text['BeginOffset']-20
         email_text['EndOffset'] = email_text['EndOffset'] + 20
         return email_text
-    
-def preprocess_email_content(email_content):
-    """
-    Preprocess' email content removing duplicates and scores lower than MIN_SCORE 
 
-    Inputs:
-        email_content: list of dictionary content in the form of {Score, Type, Text, BeginOffset, EndOffset}
-    """
+def remove_overlaps(task_in_sentence, sentence):
+    for i in range(len(task_in_sentence)-1):
+        if task_in_sentence[i]['EndOffset'] >= task_in_sentence[i+1]['BeginOffset']:
+            task_in_sentence[i]['Text'] = sentence[task_in_sentence[i]['BeginOffset']:task_in_sentence[i+1]['BeginOffset']-1]
 
-    assert len(email_content) >= 1, "Email content is empty"
-    preprocessed_emails = []
-    prev_begin = email_content[0]['BeginOffset']
-    prev_end = email_content[0]['EndOffset']
-    print("Email content:\r")
-    for i in email_content:
-        print(i)
-    print("\n")
-
-    if email_content[0]['Score'] > MIN_SCORE:
-        if (prev_begin < email_content[1]['BeginOffset'] or prev_end > email_content[1]['EndOffset']):
-            preprocessed_emails.append(email_content[0])
-        
-    for email in email_content[1:]:
-        if prev_begin <= email['BeginOffset'] and prev_end >= email['EndOffset']:
-            continue
-        prev_begin = email['BeginOffset']
-        prev_end = email['EndOffset']
-        preprocessed_emails.append(email)
-
-    for e in preprocessed_emails:
-        print(e)
-
+    return task_in_sentence
 
 def get_key_email_content(email_content):
     """
@@ -143,7 +118,7 @@ def main():
         for sentence in possible_task:
             extracted_task = get_key_email_content(sentence)
             if extracted_task:
-                task.extend(extracted_task)
+                task.extend(remove_overlaps(extracted_task, sentence))
         if task:
             task_list.append(task)
     
