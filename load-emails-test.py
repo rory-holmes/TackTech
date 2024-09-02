@@ -1,9 +1,10 @@
-import pandas as pd
-import re
 import boto3
 import logging
+import nltk
+from nltk.tokenize import sent_tokenize
+import math
+import spacy
 
-PATH_TO_DATASET = r'archive\emails.csv'  
 MIN_SCORE = 0.95
 email = """
 Hi team,
@@ -16,40 +17,31 @@ Thanks,
 John
 """
 
-def clean_email_content(text):
+def includes_key_words(email_text, sentence, key_words):
     """
-    Uses regex to extract only message content of email text
-    Inputs:
-        text: emails text
+    Returns the key phrase and surrounding text if action verbs are found in surrounding text. Returns False otherwise.
     
-    Returns:
-        cleaned_text: cleaned message content of email text
-    """
-    cleaned_text = re.sub(r'(\n)*.*?:.*?\n', '', text)
-    return cleaned_text.strip()
-
-def preprocess_emails(emails_path):
-    """
-    Extacts emails from csv found at emails_path (enron-email-dataset), returns a list of email content
-
     Inputs:
-        emails_path: path to emails csv
-    
-    Returns:
-        email_content: list of index, email content tuples
+        key_phrase: phrase content in the form of {Score, Type, Text, BeginOffset, EndOffset}
+        email_text: full email text.
     """
-    logging.info("Preprocessing emails...")
-
-    email_content = []
-    df = pd.read_csv(emails_path, sep=",")
-    pd.set_option('display.max_colwidth', None)  
-    pd.set_option('display.max_columns', None)
-    for i, row in df.iterrows():
-        email_content.append((i, clean_email_content(row['message'])))
-
-    logging.info("Processing completed")
-    return email_content
-
+    if email_text['Score'] < MIN_SCORE:
+        return None
+    
+    context_text = sentence[email_text['BeginOffset']-20:email_text['EndOffset']+20]
+    min_index = math.inf
+    for key in key_words:
+        verb_index = context_text.find(key)
+        if verb_index != -1 and verb_index <= min_index:
+            min_index = verb_index
+    if min_index == math.inf:
+        return None
+    else:
+        email_text['Text'] = context_text[min_index:]
+        email_text['BeginOffset'] = min_index + email_text['BeginOffset']-20
+        email_text['EndOffset'] = email_text['EndOffset'] + 20
+        return email_text
+    
 def preprocess_email_content(email_content):
     """
     Preprocess' email content removing duplicates and scores lower than MIN_SCORE 
@@ -57,19 +49,22 @@ def preprocess_email_content(email_content):
     Inputs:
         email_content: list of dictionary content in the form of {Score, Type, Text, BeginOffset, EndOffset}
     """
+
     assert len(email_content) >= 1, "Email content is empty"
     preprocessed_emails = []
     prev_begin = email_content[0]['BeginOffset']
     prev_end = email_content[0]['EndOffset']
+    print("Email content:\r")
+    for i in email_content:
+        print(i)
+    print("\n")
 
     if email_content[0]['Score'] > MIN_SCORE:
-        if (prev_begin < email_content[1]['BeginOffset'] or prev_end >= email_content[1]['EndOffset']):
+        if (prev_begin < email_content[1]['BeginOffset'] or prev_end > email_content[1]['EndOffset']):
             preprocessed_emails.append(email_content[0])
         
     for email in email_content[1:]:
-        if email['Score'] < MIN_SCORE:
-            continue
-        if prev_begin >= email['BeginOffset'] and prev_end <= email['EndOffset']:
+        if prev_begin <= email['BeginOffset'] and prev_end >= email['EndOffset']:
             continue
         prev_begin = email['BeginOffset']
         prev_end = email['EndOffset']
@@ -89,32 +84,73 @@ def get_key_email_content(email_content):
         email_content: list of dictionary content in the form of {Score, Type, Text, BeginOffset, EndOffset}, BeginOffset
     """
     logging.info("Detecting entities in email content...")
+    action_verbs = [
+        'prepare', 'include', 'send', 'add', 'attach', 'review', 'complete', 
+        'submit', 'create', 'update', 'finalize', 'check', 'notify'
+        ]
+    date_words = ["by the end of", "before", "by", "due"]
 
     key_email_content = []
     comprehend = boto3.client('comprehend', region_name='us-west-2')
 
-    email_text = email_content[0]
+    email_text = email_content
     entities_response = comprehend.detect_entities(
         Text=email_text, 
         LanguageCode='en')
     
     entities = entities_response['Entities']
-    key_email_content.extend(entities)
+    for entity in entities:
+        p_entity = includes_key_words(entity, email_content, date_words)
+        if p_entity:
+            key_email_content.append(p_entity)
 
     key_phrases_response = comprehend.detect_key_phrases(
-        Text=email_content[0],
+        Text=email_content,
         LanguageCode='en')
     
     key_phrases = key_phrases_response['KeyPhrases']
-    key_email_content.extend(key_phrases)
-
+    for entity in key_phrases:
+        p_entity = includes_key_words(entity, email_content, action_verbs)
+        if p_entity:
+            key_email_content.append(p_entity)
+    
     key_email_content = sorted(key_email_content, key=lambda x: int(x['BeginOffset']))
+
     return key_email_content
 
-def main():
-    #email_content = preprocess_emails(PATH_TO_DATASET)
-    email_content = get_key_email_content([email])
-    preprocess_email_content(email_content)
+def tokenize_sentences(email):
+    """
+    Separates sentences and groups into tasks
+    """
+    conjoining_words = ['also', 'additionally', 'furthermore', 'moreover', 'and', 'as well as', 'plus', 'besides']
+    sentences = sent_tokenize(email)
+    token_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if any(sentence.lower().startswith(word) for word in conjoining_words):
+            token_sentences[-1].append(sentence)
+        else:
+            token_sentences.append([sentence])
 
+    return token_sentences
+
+def main():
+    #nltk.download('punkt')
+    token_sentences = tokenize_sentences(email)
+    task_list = []
+    for possible_task in token_sentences:
+        task = []
+        for sentence in possible_task:
+            extracted_task = get_key_email_content(sentence)
+            if extracted_task:
+                task.extend(extracted_task)
+        if task:
+            task_list.append(task)
+    
+    for i, task in enumerate(task_list):
+        print(f"Task {i+1}:")
+        for t in task:
+            print(t)
+    
 
 main()
