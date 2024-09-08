@@ -2,7 +2,7 @@ import pandas as pd
 import re
 import logging
 
-PATH_TO_DATASET = r'archive\emails.csv'  
+PATH_TO_DATASET = r'emails.csv'  
 
 def clean_email_content(text):
     """
@@ -16,7 +16,7 @@ def clean_email_content(text):
     cleaned_text = re.sub(r'(\n)*.*?:.*?\n', '', text)
     return cleaned_text.strip()
 
-def preprocess_emails(emails_path):
+def preprocess_emails(emails_path, amount):
     """
     Extacts emails from csv found at emails_path (enron-email-dataset), returns a list of email content
 
@@ -28,12 +28,13 @@ def preprocess_emails(emails_path):
     """
     logging.info("Preprocessing emails...")
 
-    email_content = []
     df = pd.read_csv(emails_path, sep=",")
     pd.set_option('display.max_colwidth', None)  
     pd.set_option('display.max_columns', None)
     for i, row in df.iterrows():
-        email_content.append((i, clean_email_content(row['message'])))
+        if i < amount:
+             yield clean_email_content(row['message'])
+        else:
+            break
 
-    logging.info("Processing completed")
-    return email_content
+
