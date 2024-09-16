@@ -6,7 +6,8 @@ import math
 import spacy
 import load_enron as le
 import csv
-MIN_SCORE = 0.76
+import re
+MIN_SCORE = 0.85
 TASK_DATASET_PATH = r"task_dataset.csv"
 EMAIL = """
 Hi team,
@@ -54,7 +55,6 @@ def label_key_phrases(email_text, sentence, label):
         key_phrase: phrase content in the form of {Score, Type, Text, BeginOffset, EndOffset}
         email_text: full email text.
     """
-    print("EMAIL TEXT:", email_text)
     start_index = max(0, email_text['BeginOffset'] - 20)
     while start_index > 0 and sentence[start_index - 1].isalnum():
         start_index -= 1
@@ -65,43 +65,19 @@ def label_key_phrases(email_text, sentence, label):
         verb_index = context_text.find(key)
         if verb_index != -1 and verb_index <= min_index:
             min_index = verb_index
-
-    if min_index == math.inf or email_text['Score'] < MIN_SCORE:
+    if email_text['Score'] < MIN_SCORE:
+        return None
+    if min_index == math.inf:
         email_text['Label'] = "NOT_TASK"
-        email_text["Text"] = context_text
+        email_text["Text"] = re.sub('\n', ' ', context_text)
         email_text['BeginOffset'] = start_index
     else:
         email_text['Label'] = label
-        email_text['Text'] = context_text[min_index:email_text["EndOffset"]-start_index]
+        email_text['Text'] = re.sub('\n', ' ', context_text[min_index:email_text["EndOffset"]-start_index])
         email_text['BeginOffset'] = min_index + start_index
 
-    print("FINAL:",email_text, "\n")
     return email_text
 
-def remove_overlaps(task_in_sentence, sentence):
-    """
-    Removes any overlaps between tasks
-    
-    Inputs:
-        task_in_sentence: list of tasks with begin and end off sets
-        sentence: total sentece being analysed
-    
-    Returns:
-        task_in_sentence: List of tasks within sentence with overlaps removed
-    """
-    print("\nREMOVING OVERLAPS:")
-    print(task_in_sentence)
-    tasks = [task_in_sentence[-1]]
-    for i in range(len(task_in_sentence)-1):
-        if task_in_sentence[i]['EndOffset'] >= task_in_sentence[i+1]['BeginOffset']:
-            new_text = sentence[task_in_sentence[i]['BeginOffset']:task_in_sentence[i+1]['BeginOffset']-1]
-            if len(new_text) < 1:
-                continue
-            task_in_sentence[i]['Text'] = new_text
-
-        tasks.append(task_in_sentence[i])
-    
-    return tasks
 
 def remove_overlapsV2(labeled_phrases):
     final_phrases = []
@@ -133,21 +109,9 @@ def get_key_email_content(email_content):
         email_content: list of dictionary content in the form of {Score, Type, Text, BeginOffset, EndOffset}, BeginOffset
     """
     logging.info("Detecting entities in email content...")
-    print("NEW sentence:", email_content)
-    key_date_content = []
     key_task_content = []
+    not_task = []
     comprehend = boto3.client('comprehend', region_name='us-west-2')
-
-    email_text = email_content
-    entities_response = comprehend.detect_entities(
-        Text=email_text, 
-        LanguageCode='en')
-    
-    entities = entities_response['Entities']
-    for entity in entities:
-        if entity['Type'] == 'DATE':
-            key_date_content.append(label_key_phrases(entity, email_content, "DATE"))
-    key_date_content = remove_overlapsV2(key_date_content)
 
     key_phrases_response = comprehend.detect_key_phrases(
         Text=email_content,
@@ -155,10 +119,16 @@ def get_key_email_content(email_content):
     
     key_phrases = key_phrases_response['KeyPhrases']
     for entity in key_phrases:
-        key_task_content.append(label_key_phrases(entity, email_content, "TASK"))
+        phrase = label_key_phrases(entity, email_content, "TASK")
+        if phrase:
+            if phrase['Label'] == "TASK":
+                key_task_content.append(phrase)
+            else:
+                not_task.append(phrase)
     key_task_content = remove_overlapsV2(key_task_content)
+    not_task = remove_overlapsV2(not_task)
 
-    key_email_content = key_date_content + key_task_content
+    key_email_content =  key_task_content
     return key_email_content
 
 def tokenize_sentences(email):
@@ -207,25 +177,25 @@ def extract_tasks_in_email(email):
 
 def add_to_dataset(email):
     task_list = extract_tasks_in_email(email)
-    with open(TASK_DATASET_PATH, 'w') as ds:
-        writer = csv.writer(ds, delimiter='\t', lineterminator='\n')
+    with open(TASK_DATASET_PATH, 'a') as ds:
+        writer = csv.writer(ds, delimiter=',', lineterminator='\n')
         for task in task_list:
-            for l, t in task:
-                writer.writerow(l, t)
+            for t in task:
+                writer.writerow(t)
 
 def print_email_labeling(email):
     task_list = extract_tasks_in_email(email)
     for task in task_list:
         print("Label, task:", task)
 
-def enron_test():
+def enron_test(end, start=0):
     i = 1
-    for email in le.preprocess_emails(r'emails.csv', 10):
+    for email in le.preprocess_emails(r'archive/emails.csv', end, start):
         print(f"Email #{i}:")
-        print_email_labeling(email)
+        add_to_dataset(email)
         i+=1
 
 def main():
-    add_to_dataset(EMAIL)
+    enron_test(100, 0)
 
 main()

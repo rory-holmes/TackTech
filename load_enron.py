@@ -16,7 +16,7 @@ def clean_email_content(text):
     cleaned_text = re.sub(r'(\n)*.*?:.*?\n', '', text)
     return cleaned_text.strip()
 
-def preprocess_emails(emails_path, amount):
+def preprocess_emails(emails_path, amount, start=0):
     """
     Extacts emails from csv found at emails_path (enron-email-dataset), returns a list of email content
 
@@ -32,7 +32,9 @@ def preprocess_emails(emails_path, amount):
     pd.set_option('display.max_colwidth', None)  
     pd.set_option('display.max_columns', None)
     for i, row in df.iterrows():
-        if i < amount:
+        if i < start:
+            pass
+        elif i < amount:
              yield clean_email_content(row['message'])
         else:
             break
