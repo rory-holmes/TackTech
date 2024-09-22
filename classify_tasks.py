@@ -69,11 +69,11 @@ def label_key_phrases(email_text, sentence, label):
         return None
     if min_index == math.inf:
         email_text['Label'] = "NOT_TASK"
-        email_text["Text"] = re.sub('\n', ' ', context_text)
+        email_text["Text"] = re.sub(r'[^a-zA-Z0-9\s]|[\n"\']', '', context_text)
         email_text['BeginOffset'] = start_index
     else:
         email_text['Label'] = label
-        email_text['Text'] = re.sub('\n', ' ', context_text[min_index:email_text["EndOffset"]-start_index])
+        email_text['Text'] = re.sub(r'[^a-zA-Z0-9\s]|[\n"\']', ' ', context_text[min_index:email_text["EndOffset"]-start_index])
         email_text['BeginOffset'] = min_index + start_index
 
     return email_text
@@ -84,9 +84,6 @@ def remove_overlapsV2(labeled_phrases):
     prev_end = 0
     prev_begin = 0
     for i in labeled_phrases:
-        if i["Label"] == "NOT_TASK":
-            final_phrases.append((i["Label"], i["Text"]))
-            continue
         if i["BeginOffset"] < prev_end:
             if len(final_phrases) > 0 and i['BeginOffset'] == prev_begin and i['EndOffset'] > prev_end:
                 final_phrases.pop()
@@ -128,7 +125,7 @@ def get_key_email_content(email_content):
     key_task_content = remove_overlapsV2(key_task_content)
     not_task = remove_overlapsV2(not_task)
 
-    key_email_content =  key_task_content
+    key_email_content =  key_task_content + not_task
     return key_email_content
 
 def tokenize_sentences(email):
@@ -145,8 +142,8 @@ def tokenize_sentences(email):
     token_sentences = []
     for sentence in sentences:
         sentence = sentence.strip()
-        if any(sentence.lower().startswith(word) for word in CONJOINING_PHRASES):
-            token_sentences[-1].append(sentence)
+        if len(token_sentences) >= 1 and any(sentence.lower().startswith(word) for word in CONJOINING_PHRASES):
+            token_sentences[-1].append(sentence)            
         else:
             token_sentences.append([sentence])
 
@@ -188,14 +185,18 @@ def print_email_labeling(email):
     for task in task_list:
         print("Label, task:", task)
 
-def enron_test(end, start=0):
-    i = 1
+def enron_test(end, start=None):
+    if start:
+        i = start
+    else:
+        start = 0
+        i = 1
     for email in le.preprocess_emails(r'archive/emails.csv', end, start):
         print(f"Email #{i}:")
         add_to_dataset(email)
         i+=1
 
 def main():
-    enron_test(100, 0)
+    enron_test(1000, 201)
 
 main()
