@@ -8,7 +8,7 @@ import load_enron as le
 import csv
 import re
 MIN_SCORE = 0.85
-TASK_DATASET_PATH = r"task_dataset.csv"
+TASK_DATASET_PATH = r"task_dataset_v2.csv"
 EMAIL = """
 Hi team,
 
@@ -58,7 +58,7 @@ def label_key_phrases(email_text, sentence, label):
     start_index = max(0, email_text['BeginOffset'] - 20)
     while start_index > 0 and sentence[start_index - 1].isalnum():
         start_index -= 1
-    context_text = sentence[start_index:email_text["EndOffset"]]
+    context_text = sentence[start_index:]
 
     min_index = math.inf
     for key in key_words.get(label):
@@ -73,7 +73,7 @@ def label_key_phrases(email_text, sentence, label):
         email_text['BeginOffset'] = start_index
     else:
         email_text['Label'] = label
-        email_text['Text'] = re.sub(r'[^a-zA-Z0-9\s]|[\n"\']', ' ', context_text[min_index:email_text["EndOffset"]-start_index])
+        email_text['Text'] = re.sub(r'[^a-zA-Z0-9\s]|[\n"\']', ' ', context_text[min_index:])
         email_text['BeginOffset'] = min_index + start_index
 
     return email_text
@@ -125,8 +125,21 @@ def get_key_email_content(email_content):
     key_task_content = remove_overlapsV2(key_task_content)
     not_task = remove_overlapsV2(not_task)
 
-    key_email_content =  key_task_content + not_task
-    return key_email_content
+    if len(key_task_content) >= 1:
+        return longest_task(key_task_content)
+    elif len(not_task) >= 1:
+        return longest_task(not_task)
+    else:
+        return []
+    
+def longest_task(tasks):
+    l_t = tasks[0]
+    for t in tasks[1:]:
+        length = len(t[1])
+        if length > len(l_t[1]):
+            l_t = t
+    return l_t
+
 
 def tokenize_sentences(email):
     """
@@ -142,6 +155,7 @@ def tokenize_sentences(email):
     token_sentences = []
     for sentence in sentences:
         sentence = sentence.strip()
+        sentence.replace("\n", '')
         if len(token_sentences) >= 1 and any(sentence.lower().startswith(word) for word in CONJOINING_PHRASES):
             token_sentences[-1].append(sentence)            
         else:
@@ -163,13 +177,10 @@ def extract_tasks_in_email(email):
     token_sentences = tokenize_sentences(email)
     task_list = []
     for possible_task in token_sentences:
-        task = []
         for sentence in possible_task:
             extracted_task = get_key_email_content(sentence)
             if extracted_task:
-                task.extend(extracted_task)
-        if task:
-            task_list.append(task)
+                task_list.append(extracted_task)
     return task_list
 
 def add_to_dataset(email):
@@ -177,8 +188,7 @@ def add_to_dataset(email):
     with open(TASK_DATASET_PATH, 'a') as ds:
         writer = csv.writer(ds, delimiter=',', lineterminator='\n')
         for task in task_list:
-            for t in task:
-                writer.writerow(t)
+            writer.writerow(task)
 
 def print_email_labeling(email):
     task_list = extract_tasks_in_email(email)
@@ -197,6 +207,5 @@ def enron_test(end, start=None):
         i+=1
 
 def main():
-    enron_test(1000, 201)
+    enron_test(1000, 0)
 
-main()
