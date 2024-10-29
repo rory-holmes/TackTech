@@ -1,53 +1,14 @@
 import torch
 from transformers import BertForSequenceClassification, AdamW, BertTokenizer
-from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk import pos_tag, ne_chunk
+from nltk.tokenize import sent_tokenize
 import nltk
-import pandas as pd
-import string
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import DataLoader, Dataset
-import string
-from transformers import pipeline
 import boto3
+import utils.pre_process as pp
+
 nltk.download('averaged_perceptron_tagger_eng')
-from archive.tests import *
-
-def preprocess_text(text):
-    """
-    Preprocesses text, removes punctuation, tokenizes words and pos tags them
-    
-    Inputs:
-        text: string to be processed
-    
-    Returns:
-        pos_tags: processed string
-    """
-    text = text.lower()
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    text = ' '.join(text.split())
-
-    tokens = word_tokenize(text)
-    pos_tags = pos_tag(tokens)
-    return pos_tags
-
-def pos_sequence_vectorizer(data):
-    """
-    Extracts pos tags into a sequence for processing
-    
-    Inputs:
-        data: pos tags from processed string
-    
-    Returns:
-        pos_sequences: List of pos tags
-    """
-    pos_sequences = []
-    for pos_tags in data:
-        pos_sequence = [tag for _, tag in pos_tags]
-        pos_sequences.append(pos_sequence)
-    return pos_sequences
-
 
 """Custom Dataset for binary classification based on POS tags"""
 class TaskDataset(Dataset):
@@ -62,35 +23,24 @@ class TaskDataset(Dataset):
     def __getitem__(self, idx):
         """Converts POS tags to a string of tokens to feed into tokenizer"""
         pos_tags = self.sentences[idx]
-
         input_text = " ".join(pos_tags)
         inputs = self.tokenizer(input_text, return_tensors='pt', truncation=True, padding='max_length', max_length=64)
         label = torch.tensor(self.labels[idx], dtype=torch.long)
         return inputs['input_ids'].squeeze(0), inputs['attention_mask'].squeeze(0), label
 
 
-def load_data(csv_file):
-    """ 
-    Load pos sequences and labels from csv file
+def train_model(csv_file, test_model=True):
+    """
+    Trains the model using POS tags and binary classification
     
     Inputs:
-        csv_file: path to csv file with data
-        
-    Returns:
-        pos_sequences: pos tags in sentences
-        labels: list of 1 or 0's representing task or not task
-    """
-    data = pd.read_csv(csv_file)
-    sentences = data['Text'].apply(preprocess_text)
-    labels = data['Label']  
-    pos_sequences = pos_sequence_vectorizer(sentences)
-    return pos_sequences, labels
-
-
-def train_model(csv_file):
-    """Trains the model using POS tags and binary classification"""
-    sentences, labels = load_data(csv_file)
+        csv_file (str): path to csv file for training
+        test_model (bool): Run testing for model after training
     
+    Returns:
+        path (str): Path to the model trained
+    """
+    sentences, labels = pp.load_data(csv_file)
     label_encoder = LabelEncoder()
     labels = label_encoder.fit_transform(labels)
     
@@ -128,11 +78,24 @@ def train_model(csv_file):
         print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss:.4f}, Accuracy: {accuracy:.4f}")
 
     model.save_pretrained("archive/model/")
-    test(model, test_dataset)
+
+    if test_model == True:
+        test(model, test_dataset)
+    
+    return r"archive/model/"
 
 
 def test(model, test_dataset):
-    """Tests the model"""
+    """
+    Tests the model
+    
+    Inputs:
+        model (keras model): model to be tested
+        test_datset (TaskDataset): dataset to be tested on
+    
+    Prints:
+        Test loss and test accuraccy
+    """
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
     model.eval()
     test_loss = 0
@@ -193,9 +156,9 @@ def classify_email_sentences(email, model, tokenizer, key=None):
     classified_sentences = []
     model.eval()
     for sentence in sentences:
-        pos_tags = preprocess_text(sentence)
+        pos_tags = pp.preprocess_text(sentence)
         deadline = extract_deadline_pos(sentence)
-        pos_sequence = pos_sequence_vectorizer([pos_tags])[0]
+        pos_sequence = pp.pos_sequence_vectorizer([pos_tags])[0]
 
         # If specific pos tag references start of a task
         if key:
@@ -231,12 +194,13 @@ def classify_email_sentences(email, model, tokenizer, key=None):
     
     return classified_sentences
 
-def main(email):
-    key = ['VB']
-    loaded_model = BertForSequenceClassification.from_pretrained(r"archive/model/")
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    classified_sentences = classify_email_sentences(email, loaded_model, tokenizer, key=key)
+def output_classified(classified_sentences):
+    """
+    Prints out results from a classified email sentence
 
+    Inputs:
+        classified_sentences (list): List of classified sentences [outputted from classify_email_sentences]
+    """
     for entry in classified_sentences:
         print(f"Sentence: {entry['sentence']}")
         print(f"Predicted Class: {entry['predicted_class']}")
@@ -244,4 +208,3 @@ def main(email):
         print(f"Deadline: {entry['deadline']}")
         print()
 
-main(email)
