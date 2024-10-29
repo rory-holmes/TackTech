@@ -20,7 +20,7 @@ def test_string(email, path):
 
 def main():
     train(r"archive\task_dataset_v3-2.csv")
-    #test_string(email, r"archive/model/")
+    test_string(email, r"archive/model/")
 
 if __name__ == "__main__":
     main()

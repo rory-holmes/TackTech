@@ -1,0 +1,10 @@
+torch
+transformers
+nltk
+scikit-learn
+boto3
+pandas
+re
+logging
+email
+mailbox
