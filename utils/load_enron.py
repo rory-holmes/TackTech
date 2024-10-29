@@ -39,4 +39,17 @@ def preprocess_emails(emails_path, amount, start=0):
         else:
             break
 
+def clean_commas():
+    with open(r"archive\task_dataset_v3-2.csv", "w") as file2:
+        with open(r"archive\task_dataset_v3.csv", 'r') as file:
+            for line in file:
+                split_line = line.split(",")
+                label = 1 if split_line[0] == "TASK" else 0
+                if len(split_line) == 2:
+                    file2.write(f"{label},{split_line[1]}")
+                else:
+                    new = " ".join(split_line[1:])
+                    file2.write(f"{label},{new}")
 
+
+clean_commas()

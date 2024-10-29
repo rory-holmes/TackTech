@@ -1,0 +1,7 @@
+__pycache__/*
+*.csv
+archive/*
+classifier/*
+.venv/*
+tests/__pycache__/*
+utils/__pycache__/*
