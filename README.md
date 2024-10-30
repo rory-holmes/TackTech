@@ -11,31 +11,31 @@ To ensure dependencies are managed correctly, create a virtual environment:
 ```bash
 python3 -m venv venv
 ```
-#### Activate the environment:
+### 2. Activate the environment:
 
-On windows:
+#### On windows:
 ```bash
 venv\Scripts\activate
 ```
 
-On macOS/Linux:
+#### On macOS/Linux:
 ```bash
 source venv/bin/activate
 ```
 
-### 2. Install the depencencies
+### 3. Install the depencencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Download NLTK Data
+### 4. Download NLTK Data
 
 ```bash
 python -m nltk.downloader averaged_perceptron_tagger
 ```
 
-### 4. Prepare the Training Dataset
+### 5. Prepare the Training Dataset
 Place the CSV training dataset file in a folder named 'archive' within the project’s root directory. 
 
 ```css
